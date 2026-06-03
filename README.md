@@ -93,12 +93,18 @@ Or open `ecommerce_clothing_classifier_executed.ipynb` to browse all outputs, pl
 ## Project Structure
 
 ```
-├── ecommerce_clothing_classifier.ipynb       # Full notebook (source)
+├── ecommerce_clothing_classifier.ipynb           # Full notebook (source)
 ├── ecommerce_clothing_classifier_executed.ipynb  # Pre-run with all outputs
-├── demo.py                                   # Gradio live demo
-├── simple_cnn.keras                          # Trained Simple CNN (~1.2MB)
-└── requirements.txt                          # Dependencies
+├── demo.py                                       # Gradio local demo
+├── simple_cnn.keras                              # Trained Simple CNN (~1.2MB)
+├── requirements.txt                              # Dependencies
+└── spaces/
+    ├── app.py                                    # HF Spaces Gradio app
+    ├── weights.npz                               # Extracted CNN weights (373KB)
+    └── requirements.txt                          # HF Spaces dependencies
 ```
+
+> **Deployment note:** The live demo uses a pure NumPy forward pass (no TensorFlow at runtime). Model weights are extracted and saved as `spaces/weights.npz`. This keeps the HF Space lightweight with zero ML framework dependencies.
 
 ---
 
