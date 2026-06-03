@@ -4,7 +4,7 @@
   <img src="https://img.shields.io/badge/Python-3.9+-3776AB?style=for-the-badge&logo=python&logoColor=white"/>
   <img src="https://img.shields.io/badge/TensorFlow-2.20-FF6F00?style=for-the-badge&logo=tensorflow&logoColor=white"/>
   <img src="https://img.shields.io/badge/Keras-3.10-D00000?style=for-the-badge&logo=keras&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Gradio-Demo-F97316?style=for-the-badge"/>
+  <a href="https://huggingface.co/spaces/v1neet3/ecommerce-clothing-classifier"><img src="https://img.shields.io/badge/🤗%20Hugging%20Face-Live%20Demo-F97316?style=for-the-badge"/></a>
   <img src="https://img.shields.io/badge/Accuracy-~91%25-22C55E?style=for-the-badge"/>
 </p>
 
@@ -67,12 +67,15 @@ Both trained on [Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist
 
 ## Live Demo
 
+🚀 **[Try it on Hugging Face Spaces](https://huggingface.co/spaces/v1neet3/ecommerce-clothing-classifier)** — no setup needed, runs in your browser.
+
+Or run locally:
+
 ```bash
 pip install -r requirements.txt
 python demo.py
+# Open http://127.0.0.1:7860
 ```
-
-Open **http://127.0.0.1:7860** — upload any clothing photo or click a sample image to classify it instantly.
 
 ---
 
