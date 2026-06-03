@@ -1,0 +1,9 @@
+tensorflow==2.20.0
+keras==3.10.0
+numpy==1.26.4
+pandas
+matplotlib
+seaborn
+scikit-learn
+gradio==3.50.2
+pillow
