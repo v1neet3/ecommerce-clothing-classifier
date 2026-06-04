@@ -27,16 +27,28 @@ Raw image  →  CNN / MobileNetV2  →  Category + Sleeve + Formality
 
 ---
 
-## Models
+## Datasets & Models
 
+### Fashion-MNIST (baseline)
 | Model | Params | Test Accuracy | Best For |
 |---|---|---|---|
 | **Simple CNN** (scratch) | ~225K | ~91% | Edge / low-latency |
 | **MobileNetV2** (transfer) | ~3.5M | ~88–91% | Server-side accuracy |
 
-Both trained on [Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist) — 70,000 grayscale 28×28 images across 10 clothing categories.
+Trained on [Fashion-MNIST](https://github.com/zalandoresearch/fashion-mnist) — 70,000 grayscale 28×28 images across 10 clothing categories.
 
-### Classes
+### Myntra Fashion Products (upgrade)
+44,000 real RGB product photos · 96×96 · 20+ subCategories + colour labels
+
+| Model | Notes |
+|---|---|
+| **MobileNetV2** | Fast, mobile-friendly · head + fine-tune |
+| **EfficientNetV2-S** | Higher capacity · head + fine-tune |
+| **Multi-head MobileNetV2** | Category + Colour predicted from one backbone |
+
+> Download dataset: `kaggle datasets download -d paramaggarwal/fashion-product-images-small`
+
+### Classes (Fashion-MNIST)
 
 | Label | Label | Label | Label | Label |
 |---|---|---|---|---|
@@ -93,10 +105,15 @@ Or open `ecommerce_clothing_classifier_executed.ipynb` to browse all outputs, pl
 ## Project Structure
 
 ```
-├── ecommerce_clothing_classifier.ipynb           # Full notebook (source)
+├── ecommerce_clothing_classifier.ipynb           # Fashion-MNIST notebook (source)
 ├── ecommerce_clothing_classifier_executed.ipynb  # Pre-run with all outputs
+├── myntra_clothing_classifier.ipynb              # Myntra dataset notebook (source)
+├── myntra_clothing_classifier_executed.ipynb     # Pre-run with all outputs
+├── myntra_meta.json                              # Class names, colour map, metadata
 ├── demo.py                                       # Gradio local demo
 ├── simple_cnn.keras                              # Trained Simple CNN (~1.2MB)
+├── mobilenet_myntra.keras                        # MobileNetV2 on Myntra (22MB)
+├── multihead_myntra.keras                        # Multi-head model — category + colour (15MB)
 ├── requirements.txt                              # Dependencies
 └── spaces/
     ├── app.py                                    # HF Spaces Gradio app
