@@ -116,12 +116,129 @@ Or open `ecommerce_clothing_classifier_executed.ipynb` to browse all outputs, pl
 ├── multihead_myntra.keras                        # Multi-head model — category + colour (15MB)
 ├── requirements.txt                              # Dependencies
 └── spaces/
-    ├── app.py                                    # HF Spaces Gradio app
-    ├── weights.npz                               # Extracted CNN weights (373KB)
+    ├── app.py                                    # Gradio UI + FastAPI REST endpoint
+    ├── multihead_myntra.tflite                   # Quantised MobileNetV2 (2.9MB)
     └── requirements.txt                          # HF Spaces dependencies
 ```
 
-> **Deployment note:** The live demo uses a pure NumPy forward pass (no TensorFlow at runtime). Model weights are extracted and saved as `spaces/weights.npz`. This keeps the HF Space lightweight with zero ML framework dependencies.
+---
+
+## API
+
+A REST API runs alongside the live demo. Integrate it into any app with a single HTTP call.
+
+**Base URL**
+```
+https://v1neet3-ecommerce-clothing-classifier.hf.space
+```
+
+**Authentication**
+Pass your API key in the `X-API-Key` header. Request a key by opening an issue on this repo.
+
+For testing, use the demo key: `demo-key-2024`
+
+---
+
+### `POST /api/predict`
+
+Classify a clothing image. Returns category, colour, confidence, and top-3 predictions.
+
+**Request**
+```
+POST /api/predict
+X-API-Key: demo-key-2024
+Content-Type: multipart/form-data
+
+file: <image file>
+```
+
+**Response**
+```json
+{
+  "category": "Topwear",
+  "colour": "Navy Blue",
+  "confidence": 0.87,
+  "fallback": false,
+  "coarse_category": "Apparel",
+  "top3_categories": [
+    {"label": "Topwear",   "score": 0.87},
+    {"label": "Bottomwear","score": 0.08},
+    {"label": "Innerwear", "score": 0.03}
+  ],
+  "top3_colours": [
+    {"label": "Navy Blue", "score": 0.91},
+    {"label": "Blue",      "score": 0.06},
+    {"label": "Black",     "score": 0.02}
+  ]
+}
+```
+
+> When `fallback: true`, confidence was below 50% and `coarse_category` is returned as the safe label.
+
+---
+
+### `GET /api/health`
+
+Check if the API is up.
+
+```json
+{"status": "ok", "model": "MobileNetV2-MultiHead-Myntra", "version": "1.0.0"}
+```
+
+---
+
+### Code Examples
+
+**cURL**
+```bash
+curl -X POST \
+  https://v1neet3-ecommerce-clothing-classifier.hf.space/api/predict \
+  -H "X-API-Key: demo-key-2024" \
+  -F "file=@jacket.jpg"
+```
+
+**Python**
+```python
+import requests
+
+url  = "https://v1neet3-ecommerce-clothing-classifier.hf.space/api/predict"
+headers = {"X-API-Key": "demo-key-2024"}
+
+with open("jacket.jpg", "rb") as f:
+    response = requests.post(url, headers=headers, files={"file": f})
+
+result = response.json()
+print(f"{result['category']} · {result['colour']} ({result['confidence']:.0%})")
+```
+
+**JavaScript (fetch)**
+```javascript
+const formData = new FormData();
+formData.append("file", fileInput.files[0]);
+
+const response = await fetch(
+  "https://v1neet3-ecommerce-clothing-classifier.hf.space/api/predict",
+  {
+    method: "POST",
+    headers: { "X-API-Key": "demo-key-2024" },
+    body: formData,
+  }
+);
+const result = await response.json();
+console.log(`${result.category} · ${result.colour}`);
+```
+
+**React Native**
+```javascript
+const formData = new FormData();
+formData.append("file", { uri: imageUri, type: "image/jpeg", name: "photo.jpg" });
+
+const res = await fetch(
+  "https://v1neet3-ecommerce-clothing-classifier.hf.space/api/predict",
+  { method: "POST", headers: { "X-API-Key": "demo-key-2024" }, body: formData }
+);
+const { category, colour, confidence } = await res.json();
+```
 
 ---
 

@@ -1,3 +1,4 @@
 ai-edge-litert
 audioop-lts
 pillow
+python-multipart
