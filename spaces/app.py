@@ -1,60 +1,41 @@
 import numpy as np
 import gradio as gr
 from PIL import Image
-import pathlib, urllib.request, gzip, struct
+import pathlib, json, urllib.request, gzip, struct
 
-# ── Load weights (pure numpy — no TF needed) ──────────────────────────────────
-W = dict(np.load('weights.npz'))
+# ── Load TFLite model ─────────────────────────────────────────────────────────
+try:
+    from ai_edge_litert.interpreter import Interpreter
+    interp = Interpreter('multihead_myntra.tflite')
+except Exception:
+    import tensorflow as tf
+    interp = tf.lite.Interpreter('multihead_myntra.tflite')
 
-CLASS_NAMES = [
-    'T-shirt/top', 'Trouser', 'Pullover', 'Dress', 'Coat',
-    'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot'
-]
-HIERARCHY = {
-    'Tops':     ['T-shirt/top', 'Pullover', 'Coat', 'Shirt'],
-    'Bottoms':  ['Trouser'],
-    'Dresses':  ['Dress'],
-    'Footwear': ['Sandal', 'Sneaker', 'Ankle boot'],
-    'Bags':     ['Bag'],
+interp.allocate_tensors()
+inp_det = interp.get_input_details()
+out_det = interp.get_output_details()
+
+# Identify which output is category (22 classes) and colour (21 classes)
+out_by_size = {d['shape'][1]: d['index'] for d in out_det}
+CAT_IDX = out_by_size[22]
+COL_IDX = out_by_size[21]
+
+# ── Load metadata ─────────────────────────────────────────────────────────────
+meta         = json.load(open('myntra_meta.json'))
+CLASS_NAMES  = meta['class_names']   # 22 subCategories
+COLOUR_NAMES = meta['colour_names']  # 21 colours
+COARSE_MAP   = meta['coarse_map']
+IMG_SIZE     = meta['img_size']      # 96
+
+CONFIDENCE_THRESHOLD = 0.50
+
+COLOUR_SWATCHES = {
+    'Black': '⬛', 'White': '⬜', 'Navy Blue': '🟦', 'Blue': '🔵',
+    'Red': '🔴', 'Green': '🟢', 'Grey': '🩶', 'Brown': '🟫',
+    'Pink': '🩷', 'Yellow': '🟡', 'Orange': '🟠', 'Purple': '🟣',
 }
-CLASS_TO_COARSE = {c: k for k, v in HIERARCHY.items() for c in v}
-EMOJI = {
-    'T-shirt/top': '👕', 'Trouser': '👖', 'Pullover': '🧥',
-    'Dress': '👗', 'Coat': '🧣', 'Sandal': '👡',
-    'Shirt': '👔', 'Sneaker': '👟', 'Bag': '👜', 'Ankle boot': '👢',
-}
-CONFIDENCE_THRESHOLD = 0.60
 
-# ── Numpy CNN forward pass ─────────────────────────────────────────────────────
-def _relu(x):    return np.maximum(0, x)
-def _maxpool(x): return x.reshape(x.shape[0], x.shape[1]//2, 2, x.shape[2]//2, 2, x.shape[3]).max(axis=(2,4))
-def _gap(x):     return x.mean(axis=(1, 2))
-def _bn(x, g, b, m, v, eps=1e-3): return g * (x - m) / np.sqrt(v + eps) + b
-def _softmax(x):
-    e = np.exp(x - x.max(axis=1, keepdims=True))
-    return e / e.sum(axis=1, keepdims=True)
-
-def _conv2d(x, kernel, bias):
-    N, H, W, _ = x.shape
-    kH, kW, _, _ = kernel.shape
-    xp  = np.pad(x, ((0,0),(1,1),(1,1),(0,0)))
-    out = sum(np.einsum('nhwi,io->nhwo', xp[:,r:r+H,c:c+W,:], kernel[r,c,:,:])
-              for r in range(kH) for c in range(kW))
-    return out + bias
-
-def predict_probs(x):
-    x = _bn(_relu(_conv2d(x, W['conv1_kernel'], W['conv1_bias'])),
-            W['bn1_gamma'], W['bn1_beta'], W['bn1_mean'], W['bn1_var'])
-    x = _maxpool(x)
-    x = _bn(_relu(_conv2d(x, W['conv2_kernel'], W['conv2_bias'])),
-            W['bn2_gamma'], W['bn2_beta'], W['bn2_mean'], W['bn2_var'])
-    x = _maxpool(x)
-    x = _relu(_conv2d(x, W['conv3_kernel'], W['conv3_bias']))
-    x = _gap(x)
-    x = _relu(x @ W['dense_kernel'] + W['dense_bias'])
-    return _softmax(x @ W['out_kernel'] + W['out_bias'])
-
-# ── Example images (Fashion-MNIST via direct download) ────────────────────────
+# ── Download Fashion-MNIST examples as fallback ───────────────────────────────
 EXAMPLES_DIR = pathlib.Path('examples')
 EXAMPLES_DIR.mkdir(exist_ok=True)
 example_paths = []
@@ -74,65 +55,89 @@ try:
             f.read(8)
             return np.frombuffer(f.read(), dtype=np.uint8)
 
+    FMNIST_NAMES = ['T-shirt', 'Trouser', 'Pullover', 'Dress', 'Coat',
+                    'Sandal', 'Shirt', 'Sneaker', 'Bag', 'Ankle boot']
     x_test = _load_images(BASE+'t10k-images-idx3-ubyte.gz', '/tmp/fmnist_img.gz')
     y_test = _load_labels(BASE+'t10k-labels-idx1-ubyte.gz', '/tmp/fmnist_lbl.gz')
 
     for cls in range(10):
         idx  = np.where(y_test == cls)[0][0]
-        path = str(EXAMPLES_DIR / f"{CLASS_NAMES[cls].replace('/', '-')}.png")
-        Image.fromarray(x_test[idx], mode='L').resize((112, 112), Image.NEAREST).save(path)
+        path = str(EXAMPLES_DIR / f"{FMNIST_NAMES[cls]}.png")
+        Image.fromarray(x_test[idx], mode='L').resize((96, 96), Image.NEAREST).convert('RGB').save(path)
         example_paths.append(path)
 except Exception as e:
-    print(f'Examples unavailable: {e}')
+    print(f'Could not load examples: {e}')
 
 # ── Preprocess ────────────────────────────────────────────────────────────────
 def preprocess(image):
-    img = Image.fromarray(image).convert('L').resize((28, 28), Image.LANCZOS)
-    return np.array(img, dtype=np.float32).reshape(1, 28, 28, 1) / 255.0
+    img = Image.fromarray(image).convert('RGB').resize((IMG_SIZE, IMG_SIZE), Image.LANCZOS)
+    return np.array(img, dtype=np.float32).reshape(1, IMG_SIZE, IMG_SIZE, 3) / 255.0
 
 # ── Predict ───────────────────────────────────────────────────────────────────
 def predict(image):
     if image is None:
         return "Upload a clothing image to see predictions."
 
-    probs    = predict_probs(preprocess(image))[0]
-    top3     = probs.argsort()[::-1][:3]
-    best_idx = int(top3[0])
-    best_conf= float(probs[best_idx])
-    best_name= CLASS_NAMES[best_idx]
+    x = preprocess(image)
+    interp.set_tensor(inp_det[0]['index'], x)
+    interp.invoke()
 
-    lines = ["### Predictions\n"]
-    for i in top3:
-        filled = int(probs[i] * 20)
+    cat_probs = interp.get_tensor(CAT_IDX)[0]
+    col_probs = interp.get_tensor(COL_IDX)[0]
+
+    # Category
+    cat_top3    = cat_probs.argsort()[::-1][:3]
+    best_cat    = int(cat_top3[0])
+    best_cat_c  = float(cat_probs[best_cat])
+    cat_name    = CLASS_NAMES[best_cat]
+
+    # Colour
+    best_col    = int(col_probs.argmax())
+    best_col_c  = float(col_probs[best_col])
+    col_name    = COLOUR_NAMES[best_col]
+    col_swatch  = COLOUR_SWATCHES.get(col_name, '🎨')
+
+    lines = ["### Category\n"]
+    for i in cat_top3:
+        filled = int(cat_probs[i] * 20)
         bar    = '█' * filled + '░' * (20 - filled)
-        lines.append(f"**{EMOJI.get(CLASS_NAMES[i],'')} {CLASS_NAMES[i]}** — {probs[i]:.1%}  `{bar}`")
+        lines.append(f"**{CLASS_NAMES[i]}** — {cat_probs[i]:.1%}  `{bar}`")
+
+    lines.append("\n### Colour\n")
+    col_top3 = col_probs.argsort()[::-1][:3]
+    for i in col_top3:
+        filled = int(col_probs[i] * 20)
+        bar    = '█' * filled + '░' * (20 - filled)
+        swatch = COLOUR_SWATCHES.get(COLOUR_NAMES[i], '🎨')
+        lines.append(f"**{swatch} {COLOUR_NAMES[i]}** — {col_probs[i]:.1%}  `{bar}`")
 
     lines.append("\n---")
-    if best_conf >= CONFIDENCE_THRESHOLD:
-        lines.append(f"✅ **{EMOJI.get(best_name,'')} {best_name}** ({best_conf:.1%} confidence)")
+    if best_cat_c >= CONFIDENCE_THRESHOLD:
+        lines.append(f"✅ **{cat_name}** · {col_swatch} **{col_name}** ({best_cat_c:.1%} confidence)")
     else:
-        coarse = CLASS_TO_COARSE[best_name]
+        coarse = COARSE_MAP.get(cat_name, 'Apparel')
         lines.append(
-            f"⚠️ Low confidence ({best_conf:.1%})\n\n"
-            f"Showing coarse category: **{coarse}**  _(best guess: {EMOJI.get(best_name,'')} {best_name})_"
+            f"⚠️ Low confidence ({best_cat_c:.1%})\n\n"
+            f"Coarse category: **{coarse}** · {col_swatch} **{col_name}**\n"
+            f"_(best guess: {cat_name})_"
         )
+
     return "\n\n".join(lines)
 
 # ── UI ────────────────────────────────────────────────────────────────────────
-with gr.Blocks(title="Clothing Classifier", theme=gr.themes.Soft()) as demo:
+with gr.Blocks(title="Myntra Clothing Classifier", theme=gr.themes.Soft()) as demo:
     gr.Markdown("""
-    # 👗 E-Commerce Clothing Classifier
-    Upload any clothing image — classifies into **10 categories** with confidence scores.
-    Falls back to a coarser label when confidence is below 60%.
+    # 👗 Myntra Fashion Classifier
+    Trained on **44,000 real Myntra product photos** — predicts category AND colour in one pass.
 
-    **Model:** Simple CNN · ~225K params · Fashion-MNIST · ~91% test accuracy
+    **Model:** MobileNetV2 multi-head · 96×96 RGB · 22 subCategories · 21 colours
     """)
 
     with gr.Row():
         with gr.Column():
             img_input = gr.Image(label="Upload Clothing Image", type="numpy", height=300)
             if example_paths:
-                gr.Examples(examples=example_paths, inputs=img_input, label="Click a sample to try")
+                gr.Examples(examples=example_paths, inputs=img_input, label="Sample images (click to try)")
         with gr.Column():
             output = gr.Markdown(value="*Upload or click a sample image.*")
 
@@ -140,7 +145,7 @@ with gr.Blocks(title="Clothing Classifier", theme=gr.themes.Soft()) as demo:
 
     gr.Markdown("""
     ---
-    [GitHub](https://github.com/v1neet3/ecommerce-clothing-classifier) · Built with NumPy & Gradio
+    [GitHub](https://github.com/v1neet3/ecommerce-clothing-classifier) · Built with MobileNetV2, TFLite & Gradio
     """)
 
 demo.launch()
